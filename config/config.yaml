@@ -1,0 +1,3 @@
+apiVersion: serverless.pb82.com/v1alpha1
+kind: ServerlessAction
+projectName: serverless-operator

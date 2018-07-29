@@ -1,0 +1,4 @@
+apiVersion: "serverless.pb82.com/v1alpha1"
+kind: "ServerlessAction"
+metadata:
+  name: "example"
