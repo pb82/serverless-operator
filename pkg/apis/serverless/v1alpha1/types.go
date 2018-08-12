@@ -31,5 +31,5 @@ type ServerlessActionSpec struct {
 }
 
 type ServerlessActionStatus struct {
-	Actions 	[]string	`json:"actions"`
+	Created 	bool	`json:"created"`
 }

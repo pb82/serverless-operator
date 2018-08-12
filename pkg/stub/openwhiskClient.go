@@ -64,7 +64,6 @@ func (client *OpenwhiskClient) deleteAction(name string, namespace string) error
 	httpClient := http.Client{}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		logrus.Error(err.Error())
 		return err
 	}
 

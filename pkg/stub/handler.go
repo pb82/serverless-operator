@@ -5,44 +5,42 @@ import (
 
 	"github.com/pb82/serverless-operator/pkg/apis/serverless/v1alpha1"
 
-	"errors"
 	"fmt"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/sirupsen/logrus"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+var helper = &Helper{}
 
 func NewHandler() sdk.Handler {
 	return &Handler{}
 }
 
 type Handler struct {
-	// Fill me
 }
 
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
-	switch o := event.Object.(type) {
-	case *v1alpha1.ServerlessAction:
-		if event.Deleted {
-			return nil
-		}
-
-		handleAction(o)
+	if event.Deleted {
+		return nil
 	}
+
+	action := event.Object.(*v1alpha1.ServerlessAction)
+	actionCopy := action.DeepCopy()
+
+	// `DeletionTimestamp` will be set if the resource was marked for deletion but one or
+	// more finalizers prevent Kubernetes from removing it. In this case we have to do the
+	// neccessary cleanup and remove the finalizers
+	if actionCopy.DeletionTimestamp != nil {
+		deleteAction(actionCopy)
+	} else {
+		createAction(actionCopy)
+	}
+
 	return nil
 }
 
-func handleAction(cr *v1alpha1.ServerlessAction) {
-	if cr.DeletionTimestamp != nil {
-		deleteAction(cr)
-	} else {
-		createAction(cr)
-	}
-}
-
 func deleteAction(cr *v1alpha1.ServerlessAction) {
-	service, err := findService(cr)
+	service, err := helper.findService(cr.Namespace, "name=nginx")
 	if err != nil {
 		logrus.Error(err.Error())
 		return
@@ -56,21 +54,27 @@ func deleteAction(cr *v1alpha1.ServerlessAction) {
 
 	err = client.deleteAction(cr.Spec.Name, cr.Spec.Namespace)
 	if err != nil {
-		logrus.Error("Error deleting action")
+		logrus.Error(err.Error())
 		return
+	} else {
+		logrus.Infof("Action %s deleted", cr.Spec.Name)
 	}
 
 	cr.Finalizers = []string{}
 	sdk.Update(cr)
+
+	// We need to initiate another deletion attemp after we removed
+	// our finalizers
 	sdk.Delete(cr)
 }
 
 func createAction(cr *v1alpha1.ServerlessAction) {
-	if hasAction(cr) {
+	// Already created?
+	if cr.Status.Created {
 		return
 	}
 
-	service, err := findService(cr)
+	service, err := helper.findService(cr.Namespace, "name=nginx")
 	if err != nil {
 		logrus.Error(err.Error())
 		return
@@ -100,60 +104,27 @@ func createAction(cr *v1alpha1.ServerlessAction) {
 	}
 }
 
-func findService(cr *v1alpha1.ServerlessAction) (*corev1.Service, error) {
-	serviceList := corev1.ServiceList{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Service",
-			APIVersion: "v1",
-		},
-	}
-
-	listOptions := sdk.WithListOptions(&metav1.ListOptions{
-		IncludeUninitialized: false,
-		LabelSelector:        "name=nginx",
-	})
-
-	err := sdk.List(cr.Namespace, &serviceList, listOptions)
-	if err != nil {
-		logrus.Error(err.Error())
-		return nil, err
-	}
-
-	if len(serviceList.Items) != 1 {
-		return nil, errors.New("Unable to find Openwhisk Service")
-	}
-
-	return &serviceList.Items[0], nil
-}
-
+// Updates the `Status` field of the custom resource to prevent the following iterations
+// from modifying
 func updateStatus(cr *v1alpha1.ServerlessAction) {
-	action := fmt.Sprintf("%s.%s", getNamespace(cr), cr.Spec.Name)
+	cr.Status.Created = true
 
-	cr.Status.Actions = append(cr.Status.Actions, action)
+	// We need to set the finalizer now to make sure that Kubernetes will only delete the resouces
+	// when the operator has deleted the action from Openwhisk and then removed the finalizer
 	cr.Finalizers = append(cr.Finalizers, fmt.Sprintf("delete.%s.pb82.com", cr.Spec.Name))
 
 	err := sdk.Update(cr)
-	if err !=  nil {
+	if err != nil {
 		logrus.Error(err.Error())
 	}
 }
 
+// Return the namespace of _ (which stands for the default namespace) if
+// none is given
 func getNamespace(cr *v1alpha1.ServerlessAction) string {
 	if cr.Spec.Namespace == "" {
 		return "_" // default namespace
 	}
 
 	return cr.Spec.Namespace
-}
-
-func hasAction(cr *v1alpha1.ServerlessAction) bool {
-	action := fmt.Sprintf("%s.%s", getNamespace(cr), cr.Spec.Name)
-
-	for _, item := range cr.Status.Actions {
-		if item == action {
-			return true
-		}
-	}
-
-	return false
 }
