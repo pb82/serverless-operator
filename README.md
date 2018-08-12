@@ -12,7 +12,7 @@ Download the resources:
 ```sh
 $ curl https://raw.githubusercontent.com/pb82/serverless-operator/master/deploy/operator.yaml > operator.yaml
 $ curl https://raw.githubusercontent.com/pb82/serverless-operator/master/deploy/rbac.yaml > rbay.yaml
-$ https://raw.githubusercontent.com/pb82/serverless-operator/master/deploy/crd.yaml > crd.yaml
+$ curl https://raw.githubusercontent.com/pb82/serverless-operator/master/deploy/crd.yaml > crd.yaml
 ```
 
 Create the resources:
