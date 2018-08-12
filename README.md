@@ -1,6 +1,6 @@
 # Serverless Operator
 
-A Kubernetes / Openshift Operator, based on the [https://github.com/operator-framework/operator-sdk](Operator SDK)
+A Kubernetes / Openshift Operator, based on the [Operator SDK](https://github.com/operator-framework/operator-sdk)
 that manages (creates and deletes) link:https://openwhisk.apache.org/[Openwhisk] actions.
 
 ## Installation on Openshift
