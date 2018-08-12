@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: serverless-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: serverless-operator
+  template:
+    metadata:
+      labels:
+        name: serverless-operator
+    spec:
+      containers:
+        - name: serverless-operator
+          image: docker.io/pb82/serverless-operator
+          ports:
+          - containerPort: 60000
+            name: metrics
+          command:
+          - serverless-operator
+          imagePullPolicy: Always
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPERATOR_NAME
+              value: "serverless-operator"

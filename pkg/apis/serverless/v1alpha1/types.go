@@ -2,7 +2,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
+	)
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
@@ -22,8 +22,14 @@ type ServerlessAction struct {
 }
 
 type ServerlessActionSpec struct {
-	// Fill me
+	Name		string	`json:"name,required"`
+	Kind 		string 	`json:"kind,required"`
+	Code		string	`json:"code,required"`
+	Username 	string	`json:"username,required"`
+	Password 	string 	`json:"password,required"`
+	Namespace 	string 	`json:"namespace"`
 }
+
 type ServerlessActionStatus struct {
-	// Fill me
+	Actions 	[]string	`json:"actions"`
 }
