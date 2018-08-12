@@ -5,18 +5,13 @@ import (
 
 	"github.com/pb82/serverless-operator/pkg/apis/serverless/v1alpha1"
 
-	"github.com/operator-framework/operator-sdk/pkg/sdk"
-		corev1 "k8s.io/api/core/v1"
-		metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-		"github.com/sirupsen/logrus"
-	"fmt"
-	"net/http"
-		"encoding/json"
-	"bytes"
 	"errors"
+	"fmt"
+	"github.com/operator-framework/operator-sdk/pkg/sdk"
+	"github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-const OPENWHISK_BASE_URL = "http://%s/api/v1/namespaces/%s/actions/%s?overwrite=true"
 
 func NewHandler() sdk.Handler {
 	return &Handler{}
@@ -26,18 +21,48 @@ type Handler struct {
 	// Fill me
 }
 
-type OpenwhiskPayload struct {
-	Namespace 	string 				`json:"namespace"`
-	Name 		string 				`json:"name"`
-	Exec 		map[string]string 	`json:"exec,omitempty"`
-}
-
 func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
 	case *v1alpha1.ServerlessAction:
-		createAction(o)
+		if event.Deleted {
+			return nil
+		}
+
+		handleAction(o)
 	}
 	return nil
+}
+
+func handleAction(cr *v1alpha1.ServerlessAction) {
+	if cr.DeletionTimestamp != nil {
+		deleteAction(cr)
+	} else {
+		createAction(cr)
+	}
+}
+
+func deleteAction(cr *v1alpha1.ServerlessAction) {
+	service, err := findService(cr)
+	if err != nil {
+		logrus.Error(err.Error())
+		return
+	}
+
+	client := &OpenwhiskClient{
+		clusterIp: service.Spec.ClusterIP,
+		username:  cr.Spec.Username,
+		password:  cr.Spec.Password,
+	}
+
+	err = client.deleteAction(cr.Spec.Name, cr.Spec.Namespace)
+	if err != nil {
+		logrus.Error("Error deleting action")
+		return
+	}
+
+	cr.Finalizers = []string{}
+	sdk.Update(cr)
+	sdk.Delete(cr)
 }
 
 func createAction(cr *v1alpha1.ServerlessAction) {
@@ -46,23 +71,31 @@ func createAction(cr *v1alpha1.ServerlessAction) {
 	}
 
 	service, err := findService(cr)
-
 	if err != nil {
 		logrus.Error(err.Error())
 		return
 	}
 
 	payload := OpenwhiskPayload{
-		Name: cr.Spec.Name,
+		Name:      cr.Spec.Name,
 		Namespace: getNamespace(cr),
-		Exec: map[string]string {
+		Exec: map[string]string{
 			"kind": cr.Spec.Kind,
 			"code": cr.Spec.Code,
 		},
 	}
 
-	if callOpenwhisk(service.Spec.ClusterIP, cr.Spec.Username, cr.Spec.Password, &payload) {
-		logrus.Infof("Action %s created successfully", cr.Spec.Name)
+	client := &OpenwhiskClient{
+		clusterIp: service.Spec.ClusterIP,
+		username:  cr.Spec.Username,
+		password:  cr.Spec.Password,
+	}
+
+	err = client.createAction(&payload)
+	if err != nil {
+		logrus.Error(err.Error())
+	} else {
+		logrus.Infof("Action %s created", payload.Name)
 		updateStatus(cr)
 	}
 }
@@ -70,14 +103,14 @@ func createAction(cr *v1alpha1.ServerlessAction) {
 func findService(cr *v1alpha1.ServerlessAction) (*corev1.Service, error) {
 	serviceList := corev1.ServiceList{
 		TypeMeta: metav1.TypeMeta{
-			Kind:		"Service",
+			Kind:       "Service",
 			APIVersion: "v1",
 		},
 	}
 
 	listOptions := sdk.WithListOptions(&metav1.ListOptions{
-		IncludeUninitialized: 	false,
-		LabelSelector: "name=nginx",
+		IncludeUninitialized: false,
+		LabelSelector:        "name=nginx",
 	})
 
 	err := sdk.List(cr.Namespace, &serviceList, listOptions)
@@ -93,38 +126,16 @@ func findService(cr *v1alpha1.ServerlessAction) (*corev1.Service, error) {
 	return &serviceList.Items[0], nil
 }
 
-func callOpenwhisk(ip string, user string, pass string, payload *OpenwhiskPayload) bool {
-	url := fmt.Sprintf(OPENWHISK_BASE_URL, ip, payload.Namespace, payload.Name)
-
-	action, err := json.Marshal(payload)
-	if err != nil {
-		logrus.Error("Error marshalling action to json", err.Error())
-		return false
-	}
-
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(action))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.SetBasicAuth(user, pass)
-
-	httpClient := http.Client{}
-	resp, err := httpClient.Do(req)
-
-	if err != nil {
-		logrus.Error("Error sending request", err.Error())
-		return false
-	}
-
-	return resp.StatusCode == http.StatusOK
-}
-
 func updateStatus(cr *v1alpha1.ServerlessAction) {
-	action := fmt.Sprintf("%s/%s", "_", cr.Spec.Name)
+	action := fmt.Sprintf("%s.%s", getNamespace(cr), cr.Spec.Name)
 
 	cr.Status.Actions = append(cr.Status.Actions, action)
-	sdk.Update(cr)
+	cr.Finalizers = append(cr.Finalizers, fmt.Sprintf("delete.%s.pb82.com", cr.Spec.Name))
 
-	logrus.Infof("Resource status updated with %s", action)
+	err := sdk.Update(cr)
+	if err !=  nil {
+		logrus.Error(err.Error())
+	}
 }
 
 func getNamespace(cr *v1alpha1.ServerlessAction) string {
@@ -136,7 +147,7 @@ func getNamespace(cr *v1alpha1.ServerlessAction) string {
 }
 
 func hasAction(cr *v1alpha1.ServerlessAction) bool {
-	action := fmt.Sprintf("%s/%s", getNamespace(cr), cr.Spec.Name)
+	action := fmt.Sprintf("%s.%s", getNamespace(cr), cr.Spec.Name)
 
 	for _, item := range cr.Status.Actions {
 		if item == action {
