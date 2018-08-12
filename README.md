@@ -1,11 +1,11 @@
 # Serverless Operator
 
 A Kubernetes / Openshift Operator, based on the [Operator SDK](https://github.com/operator-framework/operator-sdk)
-that manages (creates and deletes) link:https://openwhisk.apache.org/[Openwhisk] actions.
+that manages (creates and deletes) [Openwhisk](https://openwhisk.apache.org) actions.
 
 ## Installation on Openshift
 
-*Prerequisite*: Openwhisk deployed to a namespace. You can follow the instructions link:https://github.com/projectodd/openwhisk-openshift[here] to set up Openwhisk.
+*Prerequisite*: Openwhisk deployed to a namespace. You can follow the [instructions](https://github.com/projectodd/openwhisk-openshift) to set up Openwhisk.
 
 Download the resources:
 
@@ -58,7 +58,7 @@ $ oc delete -f cr.yaml
 
 ## Development
 
-*Prerequisite*: The Operator SDK needs to be installed on your machine. Follow link:https://github.com/operator-framework/operator-sdk#quick-start[the docs] to set it up.
+*Prerequisite*: The Operator SDK needs to be installed on your machine. Follow [the docs](https://github.com/operator-framework/operator-sdk#quick-start) to set it up.
 
 You can run the Operator without deploying it to your namespace by cloning this repository and running:
 
