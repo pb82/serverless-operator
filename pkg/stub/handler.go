@@ -41,6 +41,7 @@ func (h *Handler) Handle(ctx context.Context, event sdk.Event) error {
 
 func deleteAction(cr *v1alpha1.ServerlessAction) {
 	service, err := helper.findService(cr.Namespace, "name=nginx")
+
 	if err != nil {
 		logrus.Error(err.Error())
 		return
@@ -113,10 +114,31 @@ func updateStatus(cr *v1alpha1.ServerlessAction) {
 	// when the operator has deleted the action from Openwhisk and then removed the finalizer
 	cr.Finalizers = append(cr.Finalizers, fmt.Sprintf("delete.%s.pb82.com", cr.Spec.Name))
 
+	// Try to append the REST endpoint of the action as an annotation to the
+	// custom resource
+	tryAppendRoute(cr)
+
 	err := sdk.Update(cr)
 	if err != nil {
 		logrus.Error(err.Error())
 	}
+}
+
+func tryAppendRoute(cr *v1alpha1.ServerlessAction) {
+	route, err := helper.findRoute(cr.Namespace, "openwhisk")
+	if err != nil {
+		logrus.Error(err.Error())
+		return
+	}
+
+	actionUrl := fmt.Sprintf("https://%s/api/v1/namespaces/%s/actions/%s",
+		route.Spec.Host, cr.Spec.Namespace, cr.Spec.Name)
+
+	if cr.Annotations == nil {
+		cr.Annotations = make(map[string]string)
+	}
+
+	cr.Annotations["openwhisk.action/url"] = actionUrl
 }
 
 // Return the namespace of _ (which stands for the default namespace) if
